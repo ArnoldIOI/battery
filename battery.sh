@@ -1293,6 +1293,14 @@ if [[ "$action" == "status" ]]; then
 		fi
 		log "Your battery is currently being maintained at $maintain_level"
 	fi
+	if [[ "$(get_sleep_disabled)" == "1" ]]; then
+		marker_pid=$(cat "$lid_sleep_marker_file" 2>/dev/null)
+		if [[ "$marker_pid" =~ ^[0-9]+$ ]] && kill -0 "$marker_pid" 2>/dev/null; then
+			log "💤 Sleep is disabled while battery process $marker_pid discharges with the lid closed"
+		else
+			log "⚠️ Sleep is disabled (SleepDisabled 1), so the Mac does not sleep when the lid closes. To restore sleep, run: sudo pmset -a disablesleep 0"
+		fi
+	fi
 	exit 0
 
 fi
