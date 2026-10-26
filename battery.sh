@@ -1010,13 +1010,26 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 	fi
 
 	# Check if the user requested that the battery maintenance first discharge to the desired level
-	if [[ "$subsetting" == "--force-discharge" ]]; then
+	if [[ "$force_discharge" == "true" ]]; then
 		# Before we start maintaining the battery level, first discharge to the target level
 		discharge_target="$lower_bound"
 		log "Triggering discharge to $discharge_target before enabling charging limiter"
-		BATTERY_HELPER_MODE=1 $battery_binary discharge "$discharge_target"
+		if [[ "$allow_lid_closed" == "true" ]]; then
+			# Run in the background so that 'battery maintain stop' also stops the discharge and restores sleep
+			BATTERY_HELPER_MODE=1 $battery_binary discharge "$discharge_target" --allow-lid-closed &
+			discharge_pid=$!
+			trap 'exit 143' TERM
+			trap 'kill "$discharge_pid" 2>/dev/null' EXIT
+			wait "$discharge_pid"
+			trap - TERM EXIT
+		else
+			BATTERY_HELPER_MODE=1 $battery_binary discharge "$discharge_target"
+		fi
 		log "Discharge pre battery-maintenance complete, continuing to battery maintenance loop"
 	else
+		if [[ "$allow_lid_closed" == "true" ]]; then
+			log "Ignoring --allow-lid-closed because --force-discharge is not set"
+		fi
 		log "Not triggering discharge as it is not requested"
 	fi
 
@@ -1179,12 +1192,15 @@ if [[ "$action" == "maintain" ]]; then
 		log "Starting battery maintenance at ${setting}V ±${subsetting}V"
 		nohup $battery_binary maintain_voltage_synchronous $setting $subsetting >>$logfile &
 	else
+		maintain_flags=()
+		[[ "$force_discharge" == "true" ]] && maintain_flags+=(--force-discharge)
+		[[ "$allow_lid_closed" == "true" ]] && maintain_flags+=(--allow-lid-closed)
 		if valid_percentage_range "$setting"; then
-			log "Starting battery maintenance between ${setting/-/% and }%"
+			log "Starting battery maintenance between ${setting/-/% and }% ${maintain_flags[*]}"
 		else
-			log "Starting battery maintenance at $setting% $subsetting"
+			log "Starting battery maintenance at $setting% ${maintain_flags[*]}"
 		fi
-		nohup $battery_binary maintain_synchronous $setting $subsetting >>$logfile &
+		nohup $battery_binary maintain_synchronous "$setting" "${maintain_flags[@]}" >>"$logfile" &
 	fi
 
 	# Store pid of maintenance process and setting
