@@ -88,9 +88,11 @@ Usage:
 
   battery maintain PERCENTAGE[1-100,stop] or RANGE[lower-upper]
     reboot-persistent battery level maintenance: turn off charging above, and on below a certain value
-    it has the option of a --force-discharge flag that discharges even when plugged in (this does NOT work well with clamshell mode)
+    it has the option of a --force-discharge flag that discharges even when plugged in
+    add --allow-lid-closed to keep the Mac awake during that discharge, so it also works with the lid closed
     eg: battery maintain 80           # maintain at 80%
     eg: battery maintain 70-80        # maintain between 70-80%
+    eg: battery maintain 80 --force-discharge --allow-lid-closed
     eg: battery maintain stop
 
   battery maintain VOLTAGE[${voltage_min}V-${voltage_max}V,stop] (HYSTERESIS[${voltage_hyst_min}V-${voltage_hyst_max}V])
@@ -116,9 +118,11 @@ Usage:
     charge the battery to a certain percentage; battery maintenance is restored upon completion
     eg: battery charge 90
 
-  battery discharge LEVEL[1-100]
+  battery discharge LEVEL[1-100] (--allow-lid-closed)
     block adapter power until the battery reaches the specified level; battery maintenance is restored upon completion
+    --allow-lid-closed disables sleep (pmset disablesleep) until the discharge ends, so it continues with the lid closed
     eg: battery discharge 90
+    eg: battery discharge 80 --allow-lid-closed
 
   battery update
     update the battery utility to the latest version

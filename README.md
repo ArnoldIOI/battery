@@ -61,6 +61,9 @@ battery maintain 80
 
 # This will maintain your battery between 70-80%, letting it rest in that range
 battery maintain 70-80
+
+# This will discharge to 80% even when plugged in, and keep discharging with the lid closed
+battery discharge 80 --allow-lid-closed
 ```
 
 After running a command like `battery charging off` you can verify the change visually by looking at the battery icon:
@@ -83,8 +86,11 @@ Usage:
 
   battery maintain LEVEL[1-100,stop] or RANGE[lower-upper]
     reboot-persistent battery level maintenance: turn off charging above, and on below a certain value
+    it has the option of a --force-discharge flag that discharges even when plugged in
+    add --allow-lid-closed to keep the Mac awake during that discharge, so it also works with the lid closed
     eg: battery maintain 80           # maintain at 80%
     eg: battery maintain 70-80        # maintain between 70-80%
+    eg: battery maintain 80 --force-discharge --allow-lid-closed
     eg: battery maintain stop
 
   battery charging SETTING[on/off]
@@ -102,9 +108,11 @@ Usage:
     charge the battery to a certain percentage, and disable charging when that percentage is reached
     eg: battery charge 90
 
-  battery discharge LEVEL[1-100]
+  battery discharge LEVEL[1-100] (--allow-lid-closed)
     block power input from the adapter until battery falls to this level
+    --allow-lid-closed disables sleep (pmset disablesleep) until the discharge ends, so it continues with the lid closed
     eg: battery discharge 90
+    eg: battery discharge 80 --allow-lid-closed
 
   battery visudo
     ensure you don't need to call battery with sudo
@@ -139,6 +147,21 @@ sudo rm -v "$binfolder/smc" "$binfolder/battery"
 ```
 
 Then reopen the app and things should work. If not, [open an issue](https://github.com/actuallymentor/battery/issues/new/choose) and I'll try to help you fix it.
+
+### Discharging with the lid closed
+
+macOS sleeps when the lid closes, even when plugged in, and a sleeping Mac stops the discharge loop. Add `--allow-lid-closed` to keep discharging with the lid closed:
+
+```bash
+battery discharge 80 --allow-lid-closed
+battery maintain 80 --force-discharge --allow-lid-closed
+```
+
+While the discharge runs, the flag sets `pmset -a disablesleep 1`. When the discharge ends, fails, or is stopped, it sets `pmset -a disablesleep 0` again. If sleep was already disabled before the discharge started, the setting stays as it was.
+
+- The Mac does not sleep with the lid closed while the discharge runs. Do not put it in a bag during that time.
+- The flag needs the `pmset` entries in the sudoers file. If you updated from an older version, run `battery visudo` once.
+- If the process is killed with `kill -9` or the Mac loses power, sleep can stay disabled. `battery status` shows a warning in that case. To restore sleep, run `sudo pmset -a disablesleep 0`.
 
 ### A note to Little Snitch users
 
