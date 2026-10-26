@@ -156,6 +156,10 @@ ALL ALL = NOPASSWD: FORCE_DISCHARGE_OFF
 ALL ALL = NOPASSWD: FORCE_DISCHARGE_ON
 ALL ALL = NOPASSWD: LED_CONTROL
 
+# Allow passwordless sleep control so discharging continues with the lid closed (--allow-lid-closed)
+Cmnd_Alias    LID_SLEEP_CONTROL = /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1
+ALL ALL = NOPASSWD: LID_SLEEP_CONTROL
+
 # Temporarily keep passwordless SMC reading commands so the old menubar GUI versions don't ask for password on each launch
 # trying to execute 'battery visudo'. There is no harm in removing this, so do it as soon as you believe users are no
 # longer using old versions.
@@ -439,6 +443,58 @@ function get_maintain_percentage() {
 function get_voltage() {
 	voltage=$(ioreg -l -n AppleSmartBattery -r | grep "\"Voltage\" =" | awk '{ print $3/1000 }' | tr ',' '.')
 	echo "$voltage"
+}
+
+## ##################
+## Lid-closed sleep control
+## ##################
+
+# macOS sleeps when the lid closes, even on AC power, and caffeinate cannot prevent that.
+# 'pmset -a disablesleep 1' does, so it is set only while an opt-in discharge runs.
+# See https://github.com/actuallymentor/battery/issues/179
+lid_sleep_marker_file=$configfolder/sleep_disabled_by_battery
+lid_sleep_changed=false
+
+function get_sleep_disabled() {
+	pmset -g | awk '/SleepDisabled/ { print $2 }'
+}
+
+function prevent_lid_sleep() {
+	local sleep_disabled
+	sleep_disabled=$(get_sleep_disabled)
+
+	# If sleep is already disabled, only take it over from a battery process that died before restoring it
+	if [[ "$sleep_disabled" == "1" ]]; then
+		local marker_pid
+		marker_pid=$(cat "$lid_sleep_marker_file" 2>/dev/null)
+		if [[ "$marker_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$marker_pid" 2>/dev/null; then
+			log "💤 Sleep was left disabled by battery process $marker_pid, which is no longer running; taking over"
+		else
+			log "💤 Sleep is already disabled by another process, leaving the sleep setting unchanged"
+			return 0
+		fi
+	else
+		log "💤 Disabling sleep so discharging continues with the lid closed"
+		if ! sudo /usr/bin/pmset -a disablesleep 1 >/dev/null 2>&1; then
+			log "⚠️ Failed to disable sleep, discharging pauses if the lid closes. Run 'battery visudo' to update sudo permissions"
+			return 1
+		fi
+	fi
+
+	echo $$ >"$lid_sleep_marker_file"
+	lid_sleep_changed=true
+}
+
+function restore_lid_sleep() {
+	[[ "$lid_sleep_changed" == "true" ]] || return 0
+	lid_sleep_changed=false
+
+	log "💤 Restoring sleep"
+	if ! sudo /usr/bin/pmset -a disablesleep 0 >/dev/null 2>&1; then
+		log "⚠️ Failed to restore sleep. Run 'sudo pmset -a disablesleep 0' to restore it"
+		return 1
+	fi
+	rm -f "$lid_sleep_marker_file"
 }
 
 ## ##################
