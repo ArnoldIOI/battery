@@ -171,6 +171,16 @@ action=$1
 setting=$2
 subsetting=$3
 
+# Optional flags after the setting, in any order
+force_discharge=false
+allow_lid_closed=false
+for flag in "${@:3}"; do
+	case "$flag" in
+	--force-discharge) force_discharge=true ;;
+	--allow-lid-closed) allow_lid_closed=true ;;
+	esac
+done
+
 ## ###############
 ## Helpers
 ## ###############
@@ -910,19 +920,37 @@ if [[ "$action" == "discharge" ]]; then
 	# Start discharging
 	battery_percentage=$(get_battery_percentage)
 	log "Discharging to $setting% from $battery_percentage%"
+
+	# Keep the Mac awake with the lid closed, and always restore sleep when this process ends
+	if [[ "$allow_lid_closed" == "true" ]]; then
+		wait_pid=""
+		trap 'exit 143' TERM
+		trap '[[ -n "$wait_pid" ]] && kill "$wait_pid" 2>/dev/null; restore_lid_sleep' EXIT
+		prevent_lid_sleep
+	fi
+
 	enable_discharging
 
 	# Loop until battery charging level is reached
 	while [[ "$battery_percentage" -gt "$setting" ]]; do
 
 		log "Battery at $battery_percentage% (target $setting%)"
-		caffeinate -is sleep 60
+		if [[ "$allow_lid_closed" == "true" ]]; then
+			# Wait in the background so that a signal ends the loop at once
+			caffeinate -is sleep 60 &
+			wait_pid=$!
+			wait "$wait_pid"
+			wait_pid=""
+		else
+			caffeinate -is sleep 60
+		fi
 		battery_percentage=$(get_battery_percentage)
 
 	done
 
 	disable_discharging
 	log "Discharging completed at $battery_percentage%"
+	restore_lid_sleep
 
 	# Try restoring maintenance if invoked by user from Terminal
 	if [[ "$BATTERY_HELPER_MODE" != "1" ]]; then
